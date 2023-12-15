@@ -119,7 +119,53 @@ async function loginLinkedin(page) {
     ])
 }
 
-async function jobs(url) {
+async function getJobDetails(page) {
+    const job = await page.evaluate(() => {
+        const containers = document.querySelectorAll('.jobs-search__job-details--wrapper')
+
+        return containers.forEach(container => {
+            const position = container.querySelector('.job-details-jobs-unified-top-card__job-title-link')?.textContent.trim() || null
+            const companyName = container.querySelector('.app-aware-link')?.textContent.trim() || null
+            const companyLink = container.querySelector('.app-aware-link')?.href || null
+            const type = container.querySelector('.job-details-jobs-unified-top-card__job-insight > span > span:nth-child(1)')?.textContent.trim() || null
+            const time = container.querySelector('.job-details-jobs-unified-top-card__job-insight > span > span:nth-child(2)')?.textContent.trim() || null
+            const level = container.querySelector('.job-details-jobs-unified-top-card__job-insight > span > span:nth-child(3)')?.textContent.trim() || null
+            const skills = container.querySelector('.app-aware-link.job-details-how-you-match__skills-item-subtitle.t-14.overflow-hidden')?.textContent.trim() || null
+
+            const jobDetails = container.querySelector('#job-details')
+            const spanElement = jobDetails.querySelector('span')
+            const pElements = spanElement ? Array.from(spanElement.querySelectorAll('p')) : []
+            const ulElements = spanElement ? Array.from(spanElement.querySelectorAll('ul')) : []
+
+            let aboutJob = ''
+
+            pElements.forEach(ele => {
+                aboutJob += ele?.textContent.trim() || ''
+            })
+
+            ulElements.forEach(ele => {
+                aboutJob += ele?.textContent.trim() || ''
+            })
+
+            return {
+                position,
+                companyName,
+                companyLink,
+                type,
+                time,
+                level,
+                aboutJob,
+                skills
+            }
+        })
+    })
+
+    const urlLinkedin = await page.url()
+
+    return {...job, urlLinkedin}
+}
+
+async function getJobs(url) {
     const {
         browser,
         page
@@ -137,51 +183,27 @@ async function jobs(url) {
 
         await page.goto(url)
 
-        const jobs = await page.evaluate(() => {
-            const containers = document.querySelectorAll('.jobs-search__job-details--wrapper')
-            const dataList = []
-            containers.forEach(container => {
-                const position = container.querySelector('.job-details-jobs-unified-top-card__job-title-link')?.textContent.trim() || null
-                const companyName = container.querySelector('.app-aware-link')?.textContent.trim() || null
-                const companyLink = container.querySelector('.app-aware-link')?.href || null
-                const type = container.querySelector('.job-details-jobs-unified-top-card__job-insight > span > span:nth-child(1)')?.textContent.trim() || null
-                const time = container.querySelector('.job-details-jobs-unified-top-card__job-insight > span > span:nth-child(2)')?.textContent.trim() || null
-                const level = container.querySelector('.job-details-jobs-unified-top-card__job-insight > span > span:nth-child(3)')?.textContent.trim() || null
-                const skills = container.querySelector('.app-aware-link.job-details-how-you-match__skills-item-subtitle.t-14.overflow-hidden')?.textContent.trim() || null
+        const jobList = await page.evaluate(() => {
+            const container = document.querySelector('.jobs-search-results-list > ul')
+            const jobItems = container ? Array.from(container.querySelectorAll('li')) : []
 
-                const jobDetails = container.querySelector('#job-details')
-                const spanElement = jobDetails.querySelector('span')
-                const pElements = spanElement ? Array.from(spanElement.querySelectorAll('p')) : []
-                const ulElements = spanElement ? Array.from(spanElement.querySelectorAll('ul')) : []
+            const jobs = []
 
-                let aboutJob = ''
+            jobItems.forEach(async ele => {
+                const id = ele.id
+                await page.click(`li#${id}`)
+                await page.waitForNavigation()
 
-                pElements.forEach(ele => {
-                    aboutJob += ele?.textContent.trim() || ''
-                })
-
-                ulElements.forEach(ele => {
-                    aboutJob += ele?.textContent.trim() || ''
-                })
-
-                return dataList.push({
-                    position,
-                    companyName,
-                    companyLink,
-                    type,
-                    time,
-                    level,
-                    aboutJob,
-                    skills
-                })
+                const job = await getJobDetails(page)
+                jobs.push(job)
             })
 
-            return dataList
+            return jobs
         })
 
-        console.log(jobs);
+        console.log(jobList);
     } finally {
-        await closeBrowser(page)
+        await closeBrowser(browser)
     }
 }
 
@@ -208,4 +230,4 @@ const urlLogin = 'https://www.linkedin.com/login?fromSignIn=true&trk=guest_homep
 const urlJobs = 'https://www.linkedin.com/jobs/collections/'
 
 // login(urlLogin)
-jobs(urlJobs)
+getJobs(urlJobs)
