@@ -9,13 +9,13 @@ const puppeteer = require('puppeteer');
  */
 
 async function startBrowser() {
-    const browser = await puppeteer.launch();
-    const page = await browser.newPage();
-    return { browser, page };
+    const browser = await puppeteer.launch()
+    const page = await browser.newPage()
+    return { browser, page }
 }
 
 async function closeBrowser(browser) {
-    return browser.close();
+    return browser.close()
 }
 
 var account = {
@@ -112,7 +112,7 @@ async function loginLinkedin(page) {
     await page.goto(urlLogin)
 
     return await Promise.all([
-        page.$eval(selector.USERNAME_SELECTOR, element => element.value = 'thongnc06@gmail.com'),
+        page.$eval(selector.USERNAME_SELECTOR, element => element.value = 'thongnc11@gmail.com'),
         page.$eval(selector.PASSWORD_SELECTOR, element => element.value = 'Zinza@2023'),
         page.click(selector.CTA_SELECTOR),
         page.waitForNavigation()
@@ -120,10 +120,16 @@ async function loginLinkedin(page) {
 }
 
 async function getJobDetails(page) {
+    await page.waitForSelector('#job-details', {
+        timeout: 300000,
+    })
+
     const job = await page.evaluate(() => {
         const containers = document.querySelectorAll('.jobs-search__job-details--wrapper')
 
-        return containers.forEach(container => {
+        let jobDetail = {}
+
+        containers.forEach(container => {
             const position = container.querySelector('.job-details-jobs-unified-top-card__job-title-link')?.textContent.trim() || null
             const companyName = container.querySelector('.app-aware-link')?.textContent.trim() || null
             const companyLink = container.querySelector('.app-aware-link')?.href || null
@@ -147,7 +153,7 @@ async function getJobDetails(page) {
                 aboutJob += ele?.textContent.trim() || ''
             })
 
-            return {
+            return jobDetail = {
                 position,
                 companyName,
                 companyLink,
@@ -158,53 +164,75 @@ async function getJobDetails(page) {
                 skills
             }
         })
+
+        return jobDetail
     })
 
-    const urlLinkedin = await page.url()
-
-    return {...job, urlLinkedin}
+    return job
 }
 
-async function getJobs(url) {
+async function startScraping(url) {
     const {
         browser,
         page
-    } = await startBrowser()
+    } = await startBrowser();
 
     try {
-        await page.setViewport({
-            width: 1200,
-            height: 800
-        })
-
-        await autoScroll(page)
-
-        await loginLinkedin(page)
-
-        await page.goto(url)
-
-        const jobList = await page.evaluate(() => {
-            const container = document.querySelector('.jobs-search-results-list > ul')
-            const jobItems = container ? Array.from(container.querySelectorAll('li')) : []
-
-            const jobs = []
-
-            jobItems.forEach(async ele => {
-                const id = ele.id
-                await page.click(`li#${id}`)
-                await page.waitForNavigation()
-
-                const job = await getJobDetails(page)
-                jobs.push(job)
-            })
-
-            return jobs
-        })
-
-        console.log(jobList);
+        await getJobs(page, url);
     } finally {
-        await closeBrowser(browser)
+        await closeBrowser(browser);
     }
+}
+
+async function getJobs(page, url) {
+    await page.setViewport({
+        width: 1200,
+        height: 800
+    })
+
+    await autoScroll(page)
+
+    await loginLinkedin(page)
+
+    await page.goto(url)
+
+    await page.waitForSelector('.scaffold-layout__list')
+
+    const jobList = await page.evaluate(async () => {
+        const container = document.querySelector('.scaffold-layout__list > div > ul')
+        const jobItems = container ? Array.from(container.querySelectorAll('li.ember-view')) : []
+        //return jobItems.map(ele => ele.getAttribute("data-occludable-job-id")).filter(Boolean)
+
+        return jobItems.map(ele => ele.id)
+    })
+
+    await page.screenshot({
+        path: `img.png`
+    })
+
+    const jobs = []
+
+    for (const dataId of jobList) {
+        console.log(getScrollBottom('jobs-search-results-list'))
+        await page.waitForSelector(`li#${dataId}`, {
+            timeout: 300000,
+        });
+        // await page.click(`li#${dataId}`)
+        await Promise.all([
+            // page.waitForNavigation({
+            //     timeout: 300000,
+            // }),
+            page.click(`li#${dataId}`)
+        ]);
+        await page.screenshot({
+            path: `img-${dataId}.png`
+        })
+        const job = await getJobDetails(page);
+        const jobUrl = await page.url();
+        jobs.push({ ...job, url: jobUrl });
+    }
+    console.log('jobs', jobs);
+    return jobs
 }
 
 async function autoScroll(page) {
@@ -226,8 +254,19 @@ async function autoScroll(page) {
     });
 }
 
+function getScrollBottom(className) {
+    const ele = document.querySelector(`.${className}`);
+    if (!ele) return -1
+    return ele.addEventListener('scroll', function () {
+        const distanceFromTop = ele.scrollTop;
+        const totalHeight = ele.scrollHeight;
+        const distanceFromBottom = totalHeight - (distanceFromTop + ele.clientHeight);
+        return distanceFromBottom
+    });
+}
+
 const urlLogin = 'https://www.linkedin.com/login?fromSignIn=true&trk=guest_homepage-basic_nav-header-signin'
 const urlJobs = 'https://www.linkedin.com/jobs/collections/'
 
 // login(urlLogin)
-getJobs(urlJobs)
+startScraping(urlJobs)
